@@ -117,7 +117,7 @@ def xor(a, b):
     return xorRes
 
 
-# Table of Position of 64 bits at initial level: Initial Permutation Table
+# Table of Position of 64 bits at initial level: Initial Permutation Table, This permutation to be used for initital permutation to be used in plain text
 initial_permutation = [58, 50, 42, 34, 26, 18, 10, 2,
                 60, 52, 44, 36, 28, 20, 12, 4,
                 62, 54, 46, 38, 30, 22, 14, 6,
@@ -128,8 +128,8 @@ initial_permutation = [58, 50, 42, 34, 26, 18, 10, 2,
                 63, 55, 47, 39, 31, 23, 15, 7
                 ]
 
-# Expansion D-box Table
-exp_d_box = [32, 1, 2, 3, 4, 5, 4, 5,
+# Expansion box Table
+expansion_box = [32, 1, 2, 3, 4, 5, 4, 5,
         6, 7, 8, 9, 8, 9, 10, 11,
         12, 13, 12, 13, 14, 15, 16, 17,
         16, 17, 18, 19, 20, 21, 20, 21,
@@ -137,7 +137,7 @@ exp_d_box = [32, 1, 2, 3, 4, 5, 4, 5,
         28, 29, 28, 29, 30, 31, 32, 1
         ]
 # Straight Permutation Table
-permutation = [16,  7, 20, 21,
+permutation_table = [16,  7, 20, 21,
         29, 12, 28, 17,
         1, 15, 23, 26,
         5, 18, 31, 10,
@@ -147,7 +147,7 @@ permutation = [16,  7, 20, 21,
         22, 11,  4, 25
         ]
 # S-box Table
-sbox = [
+substitutionbox = [
         [
             [14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7],
             [0, 15, 7, 4, 14, 2, 13, 1, 10, 6, 12, 11, 9, 5, 3, 8],
@@ -235,7 +235,7 @@ dropparitykeytable = [57, 49, 41, 33, 25, 17, 9,
         21, 13, 5, 28, 20, 12, 4]
 
 # permute the 64bit initial key into 56 bit key where 64bits divided into 8*8 groups and 8th bit dropped from each group
-permutedchoice1key = permute(key, dropparitykeytable, 56)
+permutedchoice1key = permute(binarykkey, dropparitykeytable, 56)
 
 # split the 56bit permutedkey into two parts each 28bits
 left = permutedchoice1key[0:28]
@@ -265,4 +265,77 @@ for i in range (0, 16): #Generating key for all the 16 rounds and store them int
     left = leftShift(left, shifttable[i]) #Shifting our key's left and right part of each 28 bit accourding to the shift table
     right = leftShift(right, shifttable[i])
 
-    now
+    # Combining left and right bits after performing shift operation
+    combinekeybits = left +right
+    # Compress the key size from 56 to 48 by using permutation and key compression table
+    roundkey = permute(combinekeybits, keycompressiontable, 48) #permute 2
+
+    # adding each round key to our arrays which will store 16 round keys
+    roundkeybinary.append(roundkey)
+    roundkeyhexadecimal.append(binaryToHexadecimal(roundkey)) #convert binary key to hexadecimal and append
+
+# -------------------------------ENCRYPTION FUNCTION----------------------------------------------------------
+# there a part of process called fiestel round
+def encryption(plaintext, roundkeybinary, roundkeyhexadecimal):
+
+
+    plaintext = hexadecimalToBinary(plaintext) #convert plaintext into binary
+
+    plaintext = permute(plaintext, initial_permutation, 64)
+
+    print("Plain Text after Initial Permutation", binaryToHexadecimal(plaintext))
+
+    # Split the block cipher into two each 32 bit
+    left = plaintext[0:32]
+    right = plaintext[32:64]
+
+    for i in range(0, 16): #right half of the black ciper will go into expansion box so that 32bit can be expanded to 48 bit
+        rightexpand = permute(right, expansion_box, 48) #expanding 32 bit into 48 bit with the help of expansion_box table
+        xorwithkey = xor(rightexpand, roundkeybinary[i]) #performing xor operation with the help of xor function with permuted choice 2 result
+
+        # Substitution Box work
+        # Substitution the value from s-box table by calculating row and column
+        substitutionboxstring = ""  #initializing blank string
+        for j in range (0, 8):
+            row = binaryToDecimal(int(xorwithkey[j*6] + xorwithkey[j*6+5])) #fethcing 1st and last bit of 6 bit output then converting to decimal for finding the column accourding to that decimal number from substitution box table
+            col = binaryToDecimal(int(xorwithkey[j * 6 + 1] + xorwithkey[j * 5 + 2] + xorwithkey[j * 5 + 3])) #fethcing 2nd, 3rd and 5th bit output then converting to decimal for finding the row accourding to that decimal number from substitution box table
+            value = substitutionbox[j][row][col]
+            substitutionboxstring = substitutionboxstring + decimalToBinary(value)
+
+        # to rearrange bits after substitution we again permute with the straight permutation table
+        substitutionboxstring = permute(substitutionboxstring, permutation_table, 32)
+
+        # we again xor the substitutionboxstring 32bit and left bits of plain text  32bits
+        result = xor(left, substitutionboxstring)
+        left = result
+
+        # in next step we use swapping here so that our left 32bits will be right and right 32bits will be left 32bits for the nex round and here our ########fiestel round ends
+        if(i != 15):
+            left, right = right, left
+        
+
+        print("Round ", i+1, "32 Left bits: ", binaryToHexadecimal(left), "32 right bits: ", binaryToHexadecimal(right), "Round ", i+1, " key:", roundkeyhexadecimal[i])
+
+    combinebits = left + right
+
+    # Using final permutation table we again rearrange the bits to get cipher text because we permuted our bits inittially so we need to finally inverse that initial permutation
+    encryptedciphertext = permute(combinebits, final_permutation, 64)
+        
+    return encryptedciphertext
+# ----------------------------------------END ENCRYPTION--------------------------------------------
+
+print("Encryption Running")
+ciphertext = binaryToHexadecimal(encryption(plaintext, roundkeybinary, roundkeyhexadecimal))
+
+print("Cipher Text: ", ciphertext)
+
+# -------------------------------------DECRYPTION--------------------------------------------------
+print("Decryption Running")
+roundkeybinaryreverse = roundkeybinary[::-1] #reversing roundkeybinary
+roundkeyhexadecimalreverse = roundkeyhexadecimal[::-1] #reverse of the key
+# instead of writing decryption we just inversed our key of 48bit and call the encryption function so we get our plain text by our reverse process
+decrypttex = binaryToHexadecimal(encryption(ciphertext, roundkeybinaryreverse, roundkeyhexadecimalreverse))
+
+print("Plain Text: ", decrypttex)
+
+# ------------------------------------DECRYPTION END--------------------------------------------------------------
